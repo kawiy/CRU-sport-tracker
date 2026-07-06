@@ -72,6 +72,16 @@ body{background:var(--bg);font-family:-apple-system,"PingFang SC","Microsoft YaH
 .mopt .ma{width:36px;height:36px;border-radius:50%;background:var(--c);color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;flex-shrink:0}
 .share-box{background:#f0fdf4;border-radius:10px;padding:12px;margin-top:12px;font-size:13px;word-break:break-all}
 .share-box textarea{width:100%;border:1px solid #d1d5db;border-radius:8px;padding:8px;font-size:12px;resize:none;margin-top:6px}
+.upload-area{border:2px dashed #d1d5db;border-radius:12px;padding:20px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;position:relative}
+.upload-area:hover{border-color:var(--c);background:#f8f7ff}
+.upload-area.has-image{border-style:solid;border-color:var(--c);padding:8px}
+.upload-area img{max-width:100%;max-height:200px;border-radius:8px}
+.ocr-progress{height:6px;border-radius:3px;background:#e5e7eb;overflow:hidden;margin-top:8px}
+.ocr-progress-bar{height:100%;background:var(--c);transition:width .3s;border-radius:3px}
+.ocr-result{background:#f0fdf4;border-radius:8px;padding:10px;margin-top:8px;font-size:13px}
+.ocr-result .label{font-weight:600;color:#065f46;margin-bottom:4px}
+.multi-rec{background:#f9fafb;border-radius:10px;padding:10px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.multi-rec .info{font-size:13px}.multi-rec .pts{font-weight:700;color:var(--c)}
 </style>
 </head>
 <body>
@@ -134,6 +144,27 @@ body{background:var(--bg);font-family:-apple-system,"PingFang SC","Microsoft YaH
 <!-- Check-in -->
 <div v-if="view==='checkin'">
 <div class="card mt-3"><div class="ct"><i class="bi bi-plus-circle"></i> 记录运动</div>
+<!-- Image Upload & OCR -->
+<div class="mb-3">
+<div class="upload-area" :class="{'has-image':ocrImage}" @click="$refs.imgInput.click()">
+<input type="file" ref="imgInput" accept="image/*" style="display:none" @change="onImageSelect">
+<div v-if="!ocrImage">
+<i class="bi bi-camera" style="font-size:32px;color:#9ca3af"></i>
+<div style="font-size:14px;color:#6b7280;margin-top:6px">点击上传运动截图，自动识别数据</div>
+</div>
+<img v-else :src="ocrImage">
+</div>
+<div v-if="ocrProgress>0&&ocrProgress<100" class="ocr-progress"><div class="ocr-progress-bar" :style="{width:ocrProgress+'%'}"></div></div>
+<div v-if="ocrStatus" style="font-size:12px;color:#6b7280;margin-top:4px;text-align:center">{{ ocrStatus }}</div>
+<div v-if="ocrDone&&ocrResults.length" class="ocr-result">
+<div class="label"><i class="bi bi-check-circle-fill"></i> 识别成功，已自动填入（可修改）</div>
+<div v-if="ocrResults.length>1" style="font-size:12px;color:#065f46;margin-bottom:6px">检测到 {{ ocrResults.length }} 条运动记录：</div>
+<div v-for="(r,i) in ocrResults" :key="i" class="multi-rec">
+<div class="info">{{ r.typeName }} <span v-if="r.distance">· {{r.distance}}km</span> <span v-if="r.steps">· {{r.steps}}步</span> <span v-if="r.duration">· {{r.duration}}分钟</span></div>
+<div class="pts">{{ r.points }}分</div>
+</div>
+</div>
+</div>
 <form @submit.prevent="submitRecord">
 <div class="mb-3"><label class="form-label">姓名</label><select class="form-select" v-model="form.member_id" required><option value="">-- 选择成员 --</option><option v-for="m in data.members" :key="m.id" :value="m.id">{{ m.name }}</option></select></div>
 <div class="mb-3"><label class="form-label">运动日期</label><input type="date" class="form-control" v-model="form.exercise_date" required></div>
@@ -144,6 +175,7 @@ body{background:var(--bg);font-family:-apple-system,"PingFang SC","Microsoft YaH
 <div class="mb-3"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" v-model="form.is_team" id="ts"><label class="form-check-label" for="ts"><i class="bi bi-people-fill text-primary"></i> 团队运动（≥3人，积分翻倍）</label></div></div>
 <div class="mb-3"><label class="form-label">备注（可选）</label><input type="text" class="form-control" v-model="form.note" placeholder="如：羽毛球双打"></div>
 <div v-if="preview>0" class="alert alert-success py-2" style="border-radius:10px;font-size:14px"><i class="bi bi-star-fill"></i> 预计获得 <strong>{{ preview }}</strong> 积分</div>
+<button v-if="ocrResults.length>1" type="button" class="btn btn-p w-100 mb-2" @click="submitAllOCR" :disabled="saving"><i class="bi bi-collection"></i> 一键提交全部 {{ ocrResults.length }} 条记录</button>
 <button type="submit" class="btn btn-p w-100" :disabled="saving"><span v-if="saving"><i class="bi bi-hourglass-split"></i> 保存中…</span><span v-else><i class="bi bi-check2-circle"></i> 提交打卡</span></button>
 </form></div></div>
 
@@ -207,6 +239,7 @@ body{background:var(--bg);font-family:-apple-system,"PingFang SC","Microsoft YaH
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
 console.log('[SPORT] Script loaded');
 const{createApp,ref,reactive,computed,onMounted}=Vue,now=new Date;
@@ -220,6 +253,9 @@ let sha=''; // data.json SHA for GitHub API updates
 // Member login
 const currentMember=ref(''),loggedIn=ref(false);
 const selMemberId=ref(''),newMemberName2=ref(''),shareLink=ref(''),autoConnecting=ref(false);
+
+// OCR
+const ocrImage=ref(''),ocrProgress=ref(0),ocrStatus=ref(''),ocrDone=ref(false),ocrResults=ref([]);
 
 // State
 const view=ref('dashboard'),saving=ref(false);
@@ -468,9 +504,122 @@ if(cfg.owner&&cfg.repo&&cfg.token){
   console.log('[SPORT] No config, showing setup screen');
 }
 
+// OCR Processing
+function onImageSelect(e){
+  const file=e.target.files[0];
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=ev=>{ocrImage.value=ev.target.result;processOCR(ev.target.result)};
+  reader.readAsDataURL(file);
+}
+async function processOCR(imgData){
+  ocrProgress.value=0;ocrStatus.value='正在加载识别引擎...';ocrDone.value=false;ocrResults.value=[];
+  try{
+    const result=await Tesseract.recognize(imgData,'chi_sim+eng',{
+      logger:m=>{
+        if(m.status==='recognizing text'){ocrProgress.value=Math.round(m.progress*100);ocrStatus.value='识别中 '+Math.round(m.progress*100)+'%'}
+        else ocrStatus.value=m.status||'';
+      }
+    });
+    const text=result.data.text;
+    console.log('[OCR] Raw text:', text);
+    const parsed=parseOCRText(text);
+    ocrResults.value=parsed;
+    if(parsed.length>0){
+      const first=parsed[0];
+      if(first.type)form.exercise_type=first.type;
+      if(first.distance)form.distance=first.distance;
+      if(first.steps)form.steps=first.steps;
+      if(first.duration)form.duration=first.duration;
+      ocrStatus.value='识别完成，检测到 '+parsed.length+' 条记录';
+    }else{
+      ocrStatus.value='未能识别出运动数据，请手动填写';
+    }
+    ocrDone.value=true;ocrProgress.value=100;
+  }catch(err){
+    console.log('[OCR] Error:', err);
+    ocrStatus.value='识别失败: '+err.message;
+    ocrDone.value=true;
+  }
+}
+function parseOCRText(text){
+  if(!text)return[];
+  // Pre-process: combine hours+minutes
+  text=text.replace(/(\d+)\s*小时\s*(\d+)\s*分(?:钟)?/g,(_,h,m)=>(parseInt(h)*60+parseInt(m))+'分钟');
+  text=text.replace(/(\d+)\s*h\s*(\d+)\s*m(?:in)?/gi,(_,h,m)=>(parseInt(h)*60+parseInt(m))+'分钟');
+  // Detect sport type
+  let sportType=0,sportName='';
+  const typeMap=[
+    {id:1,keywords:['跑步','跑','run','jog'],name:'跑步'},
+    {id:2,keywords:['步数','walk','步行','健走','走'],name:'健走/步行'},
+    {id:3,keywords:['骑行','骑车','bike','cycling','自行车'],name:'骑行'},
+    {id:4,keywords:['健身','力量','gym','strength','训练'],name:'健身/力量'},
+    {id:5,keywords:['游泳','swim','球','basketball','football','瑜伽','yoga','羽毛球','乒乓球','篮球','网球'],name:'球类/游泳/瑜伽'},
+    {id:6,keywords:['团队','团体','team'],name:'团队运动'}
+  ];
+  for(const t of typeMap){for(const kw of t.keywords){if(text.includes(kw)){sportType=t.id;sportName=t.name;break}}if(sportType)break}
+  // Extract distance (km)
+  let distance=0;
+  const distMatch=text.match(/(\d+\.?\d*)\s*(?:公里|km|千米)/i);
+  if(distMatch)distance=parseFloat(distMatch[1]);
+  // Extract steps
+  let steps=0;
+  const stepsMatch=text.match(/(\d[\d,]*)\s*步/);
+  if(stepsMatch)steps=parseInt(stepsMatch[1].replace(/,/g,''));
+  // Extract duration (minutes)
+  let duration=0;
+  const durMatch=text.match(/(\d+)\s*分钟/);
+  if(durMatch)duration=parseInt(durMatch[1]);
+  else{const hMatch=text.match(/(\d+)\s*小时/);if(hMatch)duration=parseInt(hMatch[1])*60}
+  const points=calcPts(sportType,distance,steps,duration,false);
+  const results=[{type:sportType,typeId:sportType,typeName:sportName||'未识别',distance,steps,duration,points}];
+  // Try to detect multiple records by looking for multiple distance/step mentions
+  const allDist=[...text.matchAll(/(\d+\.?\d*)\s*(?:公里|km)/gi)];
+  const allSteps=[...text.matchAll(/(\d[\d,]*)\s*步/g)];
+  if(allDist.length>1){
+    results.length=0;
+    allDist.forEach((m,i)=>{
+      const d=parseFloat(m[1]);
+      results.push({type:sportType,typeId:sportType,typeName:sportName||'跑步',distance:d,steps:0,duration:0,points:calcPts(sportType||1,d,0,0,false)});
+    });
+  }else if(allSteps.length>1){
+    results.length=0;
+    allSteps.forEach(m=>{
+      const s=parseInt(m[1].replace(/,/g,''));
+      results.push({type:sportType||2,typeId:sportType||2,typeName:sportName||'健走/步行',distance:0,steps:s,duration:0,points:calcPts(sportType||2,0,s,0,false)});
+    });
+  }
+  return results.filter(r=>r.distance>0||r.steps>0||r.duration>0||r.type>0);
+}
+
+// Submit all OCR results
+async function submitAllOCR(){
+  if(!form.member_id)return showToast('请选择成员','warning');
+  if(!ocrResults.value.length)return;
+  saving.value=true;
+  let totalPts=0;
+  for(const r of ocrResults.value){
+    if(r.points<=0)continue;
+    const id=data.records.length?Math.max(...data.records.map(x=>x.id))+1:1;
+    const rec={id,member_id:+form.member_id,exercise_date:form.exercise_date,exercise_type:r.type||r.typeId,distance:r.distance||0,steps:r.steps||0,duration:r.duration||0,is_team:false,points:r.points,note:'OCR识别',created_at:Date.now()};
+    data.records.push(rec);
+    totalPts+=r.points;
+  }
+  try{
+    await ghSave(data,'OCR batch: '+ocrResults.value.length+' records');
+    showToast('成功提交 '+ocrResults.value.filter(r=>r.points>0).length+' 条记录，共 '+totalPts+' 积分');
+    ocrImage.value='';ocrResults.value=[];ocrDone.value=false;ocrStatus.value='';ocrProgress.value=0;
+    form.exercise_type='';form.distance=0;form.steps=0;form.duration=0;form.is_team=false;form.note='';
+    calcStats();
+  }catch(e){
+    ocrResults.value.forEach(()=>data.records.pop());
+    showToast('保存失败: '+e.message,'danger');
+  }finally{saving.value=false}
+}
+
 function go(v){view.value=v;if(v==='dashboard')calcStats();else if(v==='ranking')calcRank();else if(v==='hero')calcHeroes();else if(v==='manage')filterRecs()}
 
-return{cfg,connected,connecting,cfgError,loading,connect,autoConnecting,data,view,saving,form,types,preview,period,rYear,rMonth,rQ,rankList,rInfo,tLabel,heroTab,hYear,hMonth,heroes,newName,fMember,fMonth,filteredRecs,toast,stats,recentRecords,sn,mname,go,navT,onTC,calcRank,calcHeroes,filterRecs,addMember,removeMember,submitRecord,removeRecord,showToast,currentMember,loggedIn,selMemberId,newMemberName2,shareLink,memberLogin,logout,genShareLink}
+return{cfg,connected,connecting,cfgError,loading,connect,autoConnecting,data,view,saving,form,types,preview,period,rYear,rMonth,rQ,rankList,rInfo,tLabel,heroTab,hYear,hMonth,heroes,newName,fMember,fMonth,filteredRecs,toast,stats,recentRecords,sn,mname,go,navT,onTC,calcRank,calcHeroes,filterRecs,addMember,removeMember,submitRecord,removeRecord,showToast,currentMember,loggedIn,selMemberId,newMemberName2,shareLink,memberLogin,logout,genShareLink,ocrImage,ocrProgress,ocrStatus,ocrDone,ocrResults,onImageSelect,submitAllOCR}
 }}).mount('#app');
 </script>
 </body>
