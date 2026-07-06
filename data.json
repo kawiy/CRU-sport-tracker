@@ -1,1 +1,1 @@
-{"members":[{"id":1,"name":"王志丹"},{"id":2,"name":"李煜然"},{"id":3,"name":"颜琼"},{"id":4,"name":"杨少博"}],"records":[]}
+{"members":[{"id":1,"name":"王志丹"},{"id":2,"name":"李煜然"},{"id":3,"name":"颜琼"},{"id":4,"name":"杨少博"}],"records":[{"id":1,"member_id":1,"exercise_date":"2026-07-02","exercise_type":1,"distance":6,"steps":0,"duration":0,"is_team":false,"points":3,"note":"","created_at":1783322910780}]}
