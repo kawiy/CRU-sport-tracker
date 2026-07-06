@@ -156,8 +156,9 @@ body{background:var(--bg);font-family:-apple-system,"PingFang SC","Microsoft YaH
 </div>
 <div v-if="ocrProgress>0&&ocrProgress<100" class="ocr-progress"><div class="ocr-progress-bar" :style="{width:ocrProgress+'%'}"></div></div>
 <div v-if="ocrStatus" style="font-size:12px;color:#6b7280;margin-top:4px;text-align:center">{{ ocrStatus }}</div>
-<div v-if="ocrDone&&ocrResults.length" class="ocr-result">
-<div class="label"><i class="bi bi-check-circle-fill"></i> 识别到 {{ ocrResults.length }} 条记录（可逐条修改）</div>
+<div v-if="ocrDone" class="ocr-result">
+<div v-if="ocrResults.length" class="label"><i class="bi bi-check-circle-fill"></i> 识别到 {{ ocrResults.length }} 条记录（可逐条修改）</div>
+<div v-else class="label" style="color:#d97706"><i class="bi bi-exclamation-circle"></i> 未识别到记录，可手动添加或查看原文排查</div>
 <div v-for="(r,i) in ocrResults" :key="i" style="background:#fff;border-radius:8px;padding:8px;margin-top:6px;border:1px solid #e5e7eb">
 <div v-if="r.isDuplicate" style="font-size:11px;color:#d97706;margin-bottom:4px"><i class="bi bi-exclamation-triangle"></i> 已存在相同记录，将跳过</div>
 <div class="row g-1" style="font-size:13px">
@@ -171,6 +172,11 @@ body{background:var(--bg);font-family:-apple-system,"PingFang SC","Microsoft YaH
 <div class="col-4" v-if="r.type>=4"><input class="form-control form-control-sm" type="number" v-model.number="r.duration" placeholder="分钟" style="font-size:12px"></div>
 </div>
 </div>
+<div v-if="ocrDone" style="display:flex;gap:8px;margin-top:8px">
+<button type="button" class="btn btn-sm btn-outline-secondary" style="flex:1;font-size:12px" @click="addOCRManual"><i class="bi bi-plus"></i> 手动添加一条</button>
+<button type="button" class="btn btn-sm btn-outline-secondary" style="flex:1;font-size:12px" @click="toggleRawText"><i class="bi bi-code-slash"></i> {{ showRawText?'隐藏':'查看' }}识别原文</button>
+</div>
+<div v-if="showRawText" style="background:#f8f9fa;border:1px solid #dee2e6;border-radius:6px;padding:8px;margin-top:8px;font-size:11px;font-family:monospace;max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;color:#495057">{{ ocrRawText || '（无识别文本）' }}</div>
 </div>
 </div>
 <form @submit.prevent="submitRecord">
@@ -183,7 +189,7 @@ body{background:var(--bg);font-family:-apple-system,"PingFang SC","Microsoft YaH
 <div class="mb-3"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" v-model="form.is_team" id="ts"><label class="form-check-label" for="ts"><i class="bi bi-people-fill text-primary"></i> 团队运动（≥3人，积分翻倍）</label></div></div>
 <div class="mb-3"><label class="form-label">备注（可选）</label><input type="text" class="form-control" v-model="form.note" placeholder="如：羽毛球双打"></div>
 <div v-if="preview>0" class="alert alert-success py-2" style="border-radius:10px;font-size:14px"><i class="bi bi-star-fill"></i> 预计获得 <strong>{{ preview }}</strong> 积分</div>
-<button v-if="ocrResults.length>1" type="button" class="btn btn-p w-100 mb-2" @click="submitAllOCR" :disabled="saving"><i class="bi bi-collection"></i> 一键提交全部 {{ ocrResults.length }} 条记录</button>
+<button v-if="ocrResults.length>=1" type="button" class="btn btn-p w-100 mb-2" @click="submitAllOCR" :disabled="saving"><i class="bi bi-collection"></i> 一键提交全部 {{ ocrResults.length }} 条记录</button>
 <button type="submit" class="btn btn-p w-100" :disabled="saving"><span v-if="saving"><i class="bi bi-hourglass-split"></i> 保存中…</span><span v-else><i class="bi bi-check2-circle"></i> 提交打卡</span></button>
 </form></div></div>
 
@@ -263,7 +269,7 @@ const currentMember=ref(''),loggedIn=ref(false);
 const selMemberId=ref(''),newMemberName2=ref(''),shareLink=ref(''),autoConnecting=ref(false);
 
 // OCR
-const ocrImage=ref(''),ocrProgress=ref(0),ocrStatus=ref(''),ocrDone=ref(false),ocrResults=ref([]);
+const ocrImage=ref(''),ocrProgress=ref(0),ocrStatus=ref(''),ocrDone=ref(false),ocrResults=ref([]),ocrRawText=ref(''),showRawText=ref(false);
 
 // State
 const view=ref('dashboard'),saving=ref(false);
@@ -542,7 +548,7 @@ function onImageSelect(e){
   reader.readAsDataURL(file);
 }
 async function processOCR(imgData){
-  ocrProgress.value=0;ocrStatus.value='正在预处理图片...';ocrDone.value=false;ocrResults.value=[];
+  ocrProgress.value=0;ocrStatus.value='正在预处理图片...';ocrDone.value=false;ocrResults.value=[];ocrRawText.value='';showRawText.value=false;
   try{
     const processed=await preprocessImage(imgData);
     ocrStatus.value='正在加载识别引擎...';
@@ -553,79 +559,107 @@ async function processOCR(imgData){
       }
     });
     const text=result.data.text;
-    console.log('[OCR] Raw text:', text);
+    ocrRawText.value=text;
+    console.log('[OCR] Raw text:\n',text);
+    console.log('[OCR] Lines:',result.data.lines.map(l=>l.text.trim()).filter(Boolean));
     const parsed=parseOCRText(text);
     ocrResults.value=parsed;
     if(parsed.length>0){
-      const first=parsed[0];
-      if(first.type)form.exercise_type=first.type;
-      if(first.distance)form.distance=first.distance;
-      if(first.steps)form.steps=first.steps;
-      if(first.duration)form.duration=first.duration;
       ocrStatus.value='识别完成，检测到 '+parsed.length+' 条记录'+(parsed.some(r=>r.isDuplicate)?'（含重复）':'');
     }else{
-      ocrStatus.value='未能识别出运动数据，请手动填写';
+      ocrStatus.value='未能识别出运动数据，请点击"查看原文"检查，或手动添加记录';
     }
     ocrDone.value=true;ocrProgress.value=100;
   }catch(err){
-    console.log('[OCR] Error:', err);
+    console.log('[OCR] Error:',err);
     ocrStatus.value='识别失败: '+err.message;
     ocrDone.value=true;
   }
 }
 function parseOCRText(text){
   if(!text)return[];
-  // Pre-process hours+minutes
   text=text.replace(/(\d+)\s*小时\s*(\d+)\s*分(?:钟)?/g,(_,h,m)=>(parseInt(h)*60+parseInt(m))+'分钟');
   text=text.replace(/(\d+)\s*h\s*(\d+)\s*m(?:in)?/gi,(_,h,m)=>(parseInt(h)*60+parseInt(m))+'分钟');
+  text=text.replace(/(\d+)\s*[Hh]\s*(\d+)\s*[Mm]/g,(_,h,m)=>(parseInt(h)*60+parseInt(m))+'分钟');
   const lines=text.split(/\n/).map(l=>l.trim()).filter(l=>l.length>0);
-  const dateRe=/(\d{1,2})\s*[月\/\-]\s*(\d{1,2})\s*[日号]?/;
-  // Split into blocks by dates
-  const blocks=[];let cur=[];let curDate=null;
-  for(const line of lines){
-    const dm=line.match(dateRe);
-    if(dm){
-      if(cur.length>0||curDate)blocks.push({lines:[...cur],date:curDate});
-      cur=[line];curDate={month:parseInt(dm[1]),day:parseInt(dm[2])};
-    }else{cur.push(line)}
-  }
-  if(cur.length>0)blocks.push({lines:[...cur],date:curDate});
-  if(blocks.length===0)blocks.push({lines,date:null});
-  const typeMap=[
-    {id:1,kw:['户外跑步','跑步','跑','run','jog','晨跑','夜跑'],n:'跑步'},
+  const dateRe=/(\d{1,2})\s*[月\/\-\.年]\s*(\d{1,2})\s*[日号\/\-]?/;
+  const TM=[
+    {id:1,kw:['户外跑步','跑步','跑','run','jog','晨跑','夜跑','慢跑'],n:'跑步'},
     {id:2,kw:['步数','walk','步行','健走','走','徒步'],n:'健走/步行'},
     {id:3,kw:['骑行','骑车','bike','cycling','自行车'],n:'骑行'},
     {id:4,kw:['健身','力量','gym','strength','训练','举铁'],n:'健身/力量'},
     {id:5,kw:['游泳','swim','羽毛球','乒乓球','篮球','网球','足球','排球','球','瑜伽','yoga','badminton'],n:'球类/游泳/瑜伽'},
     {id:6,kw:['团队','团体','team'],n:'团队运动'}
   ];
-  const results=[];const now2=new Date();const curY=now2.getFullYear();const curM=now2.getMonth()+1;
-  for(const block of blocks){
-    const bt=block.lines.join(' ');
-    let sType=0,sName='';
-    for(const t of typeMap){for(const kw of t.kw){if(bt.includes(kw)){sType=t.id;sName=t.n;break}}if(sType)break}
-    let dist=0;const dm2=bt.match(/(\d+\.?\d*)\s*(?:公里|km|千米)/i);if(dm2)dist=parseFloat(dm2[1]);
-    let stp=0;const sm=bt.match(/(\d[\d,]*)\s*步/);if(sm)stp=parseInt(sm[1].replace(/,/g,''));
-    let dur=0;
-    const durM=bt.match(/(\d+)\s*分钟/);
-    if(durM)dur=parseInt(durM[1]);
-    else{const hm=bt.match(/(\d+)\s*小时/);if(hm)dur=parseInt(hm[1])*60}
-    if(!dur){const hm2=bt.match(/(\d+)\s*h\s*(\d+)\s*m/i);if(hm2)dur=parseInt(hm2[1])*60+parseInt(hm2[2])}
-    if(!dur){const hm3=bt.match(/(\d+)\s*h(?:our)?/i);if(hm3)dur=parseInt(hm3[1])*60}
-    let recDate='';
-    if(block.date){
-      const mm=block.date.month,dd=block.date.day;
-      const yr=mm>curM+1?curY-1:curY;
-      recDate=yr+'-'+String(mm).padStart(2,'0')+'-'+String(dd).padStart(2,'0');
-    }else{recDate=now2.toISOString().slice(0,10)}
-    if(sType>0||dist>0||stp>0||dur>0){
-      const pts=calcPts(sType,dist,stp,dur,false);
-      const isDup=data.records.some(r=>r.member_id===(+form.member_id||0)&&r.exercise_date===recDate&&r.exercise_type===sType&&Math.abs((r.distance||0)-dist)<0.01&&Math.abs((r.steps||0)-stp)<1);
-      results.push({type:sType,typeName:sName||'未识别',distance:dist,steps:stp,duration:dur,date:recDate,points:pts,isDuplicate:isDup});
-    }
+  function pDist(t){const m=t.match(/(\d+\.?\d*)\s*(?:公里|km|千米)/i);return m?parseFloat(m[1]):0}
+  function pStp(t){const m=t.match(/([\d,]+)\s*步/);return m?parseInt(m[1].replace(/,/g,'')):0}
+  function pDur(t){
+    let m=t.match(/(\d+)\s*分钟/);if(m)return parseInt(m[1]);
+    m=t.match(/(\d+)\s*小时/);if(m)return parseInt(m[1])*60;
+    m=t.match(/(\d+)\s*h\s*(\d+)\s*m/i);if(m)return parseInt(m[1])*60+parseInt(m[2]);
+    m=t.match(/(\d+)\s*h(?:our)?/i);if(m)return parseInt(m[1])*60;
+    m=t.match(/(\d+)\s*min/i);if(m)return parseInt(m[1]);
+    m=t.match(/(\d+)[:]([\d]{2})/);if(m)return parseInt(m[1])*60+parseInt(m[2]);
+    return 0;
   }
-  return results.filter(r=>r.distance>0||r.steps>0||r.duration>0||r.type>0);
+  function detType(t){for(const tp of TM)for(const kw of tp.kw)if(t.includes(kw))return{t:tp.id,n:tp.n};return{t:0,n:'未识别'}}
+  function extDate(t){const m=t.match(dateRe);if(m)return{month:parseInt(m[1]),day:parseInt(m[2])};return null}
+  function buildRecs(blocks){
+    const results=[];const now2=new Date();const curY=now2.getFullYear();const curM=now2.getMonth()+1;
+    for(const block of blocks){
+      const bt=block.lines.join(' ');
+      const{t:sType,n:sName}=detType(bt);
+      let dist=pDist(bt),stp=pStp(bt),dur=pDur(bt);
+      let recDate='';
+      const bd=block.date||extDate(bt);
+      if(bd){const mm=bd.month,dd=bd.day;const yr=mm>curM+1?curY-1:curY;recDate=yr+'-'+String(mm).padStart(2,'0')+'-'+String(dd).padStart(2,'0')}
+      else{recDate=now2.toISOString().slice(0,10)}
+      if(sType>0||dist>0||stp>0||dur>0){
+        const pts=calcPts(sType,dist,stp,dur,false);
+        const isDup=data.records.some(r=>r.member_id===(+form.member_id||0)&&r.exercise_date===recDate&&r.exercise_type===sType&&Math.abs((r.distance||0)-dist)<0.01&&Math.abs((r.steps||0)-stp)<1);
+        results.push({type:sType,typeName:sName,distance:dist,steps:stp,duration:dur,date:recDate,points:pts,isDuplicate:isDup});
+      }
+    }
+    return results.filter(r=>r.distance>0||r.steps>0||r.duration>0||r.type>0);
+  }
+  // Strategy 1: split by dates
+  let blocks=[];let cur=[];let curDate=null;
+  for(const line of lines){
+    const dm=line.match(dateRe);
+    if(dm){if(cur.length>0||curDate)blocks.push({lines:[...cur],date:curDate});cur=[line];curDate={month:parseInt(dm[1]),day:parseInt(dm[2])}}
+    else{cur.push(line)}
+  }
+  if(cur.length>0)blocks.push({lines:[...cur],date:curDate});
+  if(blocks.length===0)blocks=[{lines,date:null}];
+  let results=buildRecs(blocks);
+  if(results.length>=2)return results;
+  // Strategy 2: split by sport keywords (each keyword line starts a new block)
+  const allKw=TM.flatMap(t=>t.kw);
+  const kwRe=new RegExp(allKw.map(k=>k.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|'));
+  const blocks2=[];let cur2=[];
+  for(const line of lines){
+    if(kwRe.test(line)&&cur2.length>0){blocks2.push({lines:[...cur2],date:null});cur2=[line]}
+    else{cur2.push(line)}
+  }
+  if(cur2.length>0)blocks2.push({lines:[...cur2],date:null});
+  if(blocks2.length>blocks.length){results=buildRecs(blocks2);if(results.length>=2)return results}
+  // Strategy 3: split by lines that contain significant numbers (distance/duration patterns)
+  const numRe=/(\d+\.?\d*\s*(?:公里|km|千米)|[\d,]+\s*步|\d+\s*分钟|\d+\s*h\s*\d+\s*m|\d+\s*千卡|\d+[.]\d+)/i;
+  const blocks3=[];let cur3=[];
+  for(const line of lines){
+    if(numRe.test(line)&&cur3.length>0){blocks3.push({lines:[...cur3],date:null});cur3=[line]}
+    else{cur3.push(line)}
+  }
+  if(cur3.length>0)blocks3.push({lines:[...cur3],date:null});
+  if(blocks3.length>Math.max(blocks.length,blocks2.length)){results=buildRecs(blocks3);if(results.length>=2)return results}
+  // Return best result
+  return results;
 }
+function addOCRManual(){
+  const now2=new Date();
+  ocrResults.value.push({type:1,typeName:'跑步',distance:0,steps:0,duration:0,date:now2.toISOString().slice(0,10),points:0,isDuplicate:false});
+}
+function toggleRawText(){showRawText.value=!showRawText.value}
 function removeOCRRecord(idx){ocrResults.value.splice(idx,1)}
 async function submitAllOCR(){
   if(!form.member_id)return showToast('请选择成员','warning');
@@ -651,7 +685,7 @@ async function submitAllOCR(){
 
 function go(v){view.value=v;if(v==='dashboard')calcStats();else if(v==='ranking')calcRank();else if(v==='hero')calcHeroes();else if(v==='manage')filterRecs()}
 
-return{cfg,connected,connecting,cfgError,loading,connect,autoConnecting,data,view,saving,form,types,preview,period,rYear,rMonth,rQ,rankList,rInfo,tLabel,heroTab,hYear,hMonth,heroes,newName,fMember,fMonth,filteredRecs,toast,stats,recentRecords,sn,mname,go,navT,onTC,calcPts,calcRank,calcHeroes,filterRecs,addMember,removeMember,submitRecord,removeRecord,showToast,currentMember,loggedIn,selMemberId,newMemberName2,shareLink,memberLogin,logout,genShareLink,ocrImage,ocrProgress,ocrStatus,ocrDone,ocrResults,onImageSelect,submitAllOCR,removeOCRRecord}
+return{cfg,connected,connecting,cfgError,loading,connect,autoConnecting,data,view,saving,form,types,preview,period,rYear,rMonth,rQ,rankList,rInfo,tLabel,heroTab,hYear,hMonth,heroes,newName,fMember,fMonth,filteredRecs,toast,stats,recentRecords,sn,mname,go,navT,onTC,calcPts,calcRank,calcHeroes,filterRecs,addMember,removeMember,submitRecord,removeRecord,showToast,currentMember,loggedIn,selMemberId,newMemberName2,shareLink,memberLogin,logout,genShareLink,ocrImage,ocrProgress,ocrStatus,ocrDone,ocrResults,ocrRawText,showRawText,onImageSelect,submitAllOCR,removeOCRRecord,addOCRManual,toggleRawText}
 }}).mount('#app');
 </script>
 </body>
