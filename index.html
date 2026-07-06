@@ -306,7 +306,7 @@ async function connect(){
       }
       catch(e2){cfgError.value='创建文件失败: '+e2.message}
     }else cfgError.value='连接失败: '+e.message;
-  }finally{connecting.value=false;autoConnecting.value=false}
+  }finally{connecting.value=false;autoConnecting.value=false;loading.value=false}
 }
 
 // Stats
