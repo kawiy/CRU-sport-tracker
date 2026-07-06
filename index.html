@@ -159,21 +159,18 @@ body{background:var(--bg);font-family:-apple-system,"PingFang SC","Microsoft YaH
 <div v-if="ocrDone" class="ocr-result">
 <div v-if="ocrResults.length" class="label"><i class="bi bi-check-circle-fill"></i> 识别到 {{ ocrResults.length }} 条记录（可逐条修改）</div>
 <div v-else class="label" style="color:#d97706"><i class="bi bi-exclamation-circle"></i> 未识别到记录，可手动添加或查看原文排查</div>
-<div v-for="(r,i) in ocrResults" :key="i" style="background:#fff;border-radius:8px;padding:8px;margin-top:6px;border:1px solid #e5e7eb">
-<div v-if="r.isDuplicate" style="font-size:11px;color:#d97706;margin-bottom:4px"><i class="bi bi-exclamation-triangle"></i> 已存在相同记录，将跳过</div>
-<div class="row g-1" style="font-size:13px">
-<div class="col-5"><select class="form-select form-select-sm" v-model.number="r.type" style="font-size:12px"><option v-for="t in types" :key="t.id" :value="t.id">{{ t.name }}</option></select></div>
-<div class="col-4"><input type="date" class="form-control form-control-sm" v-model="r.date" style="font-size:12px"></div>
-<div class="col-3 text-end"><span style="color:var(--c);font-weight:700;font-size:13px">{{ calcPts(r.type,r.distance,r.steps,r.duration,r.is_team) }}分</span> <i class="bi bi-x" style="cursor:pointer;color:#9ca3af" @click="removeOCRRecord(i)"></i></div>
-</div>
-<div class="row g-1 mt-1" style="font-size:12px">
-<div class="col-4"><input class="form-control form-control-sm" type="number" step="0.1" v-model.number="r.distance" placeholder="公里" style="font-size:12px"></div>
-<div class="col-4"><input class="form-control form-control-sm" type="number" v-model.number="r.steps" placeholder="步数" style="font-size:12px"></div>
-<div class="col-4"><input class="form-control form-control-sm" type="number" v-model.number="r.duration" placeholder="分钟" style="font-size:12px"></div>
-</div>
-<div style="margin-top:4px;display:flex;align-items:center;gap:4px;font-size:11px;color:#6b7280">
-<input type="checkbox" v-model="r.is_team" :id="'tm'+i" style="width:14px;height:14px"><label :for="'tm'+i" style="cursor:pointer;margin:0"><i class="bi bi-people-fill" style="color:#3b82f6"></i> 团队运动（积分翻倍）</label>
-</div>
+<div v-for="(r,i) in ocrResults" :key="i" style="background:#fff;border-radius:8px;padding:6px 8px;margin-top:6px;border:1px solid #e5e7eb;display:flex;flex-wrap:wrap;align-items:center;gap:4px;font-size:12px">
+<div v-if="r.isDuplicate" style="width:100%;font-size:10px;color:#d97706"><i class="bi bi-exclamation-triangle"></i> 重复记录，将跳过</div>
+<select class="form-select form-select-sm" v-model.number="r.type" style="font-size:11px;width:auto;min-width:70px;flex:1;padding:2px 4px;height:28px">
+<option v-for="t in types" :key="t.id" :value="t.id">{{ t.name }}</option>
+</select>
+<input type="date" class="form-control form-control-sm" v-model="r.date" style="font-size:11px;width:auto;min-width:110px;flex:1;padding:2px 4px;height:28px">
+<input class="form-control form-control-sm" type="number" step="0.1" v-model.number="r.distance" placeholder="km" style="font-size:11px;width:55px;flex:0 0 55px;padding:2px 4px;height:28px">
+<input class="form-control form-control-sm" type="number" v-model.number="r.steps" placeholder="步" style="font-size:11px;width:55px;flex:0 0 55px;padding:2px 4px;height:28px">
+<input class="form-control form-control-sm" type="number" v-model.number="r.duration" placeholder="min" style="font-size:11px;width:50px;flex:0 0 50px;padding:2px 4px;height:28px">
+<label style="display:flex;align-items:center;gap:2px;cursor:pointer;margin:0;white-space:nowrap;font-size:11px;color:#6b7280"><input type="checkbox" v-model="r.is_team" style="width:13px;height:13px"><i class="bi bi-people-fill" style="color:#3b82f6;font-size:11px"></i>团</label>
+<span style="color:var(--c);font-weight:700;font-size:13px;white-space:nowrap">{{ calcPts(r.type,r.distance,r.steps,r.duration,r.is_team) }}分</span>
+<i class="bi bi-x-circle" style="cursor:pointer;color:#d1d5db;font-size:15px" @click="removeOCRRecord(i)"></i>
 </div>
 <div v-if="ocrDone" style="display:flex;gap:8px;margin-top:8px">
 <button type="button" class="btn btn-sm btn-outline-secondary" style="flex:1;font-size:12px" @click="addOCRManual"><i class="bi bi-plus"></i> 手动添加一条</button>
