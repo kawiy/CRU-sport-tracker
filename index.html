@@ -208,8 +208,10 @@ body{background:var(--bg);font-family:-apple-system,"PingFang SC","Microsoft YaH
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
 <script>
+console.log('[SPORT] Script loaded');
 const{createApp,ref,reactive,computed,onMounted}=Vue,now=new Date;
 createApp({setup(){
+console.log('[SPORT] Setup started');
 // Config
 const cfg=reactive({owner:'',repo:'',token:''}),connected=ref(false),connecting=ref(false),cfgError=ref(''),loading=ref(false);
 const data=reactive({members:[],records:[]});
@@ -237,16 +239,21 @@ function calcPts(t,d,s,dur,team){const i={1:{f:'d',th:2,r:.5},2:{f:'s',th:10000,
 
 // GitHub API with timeout
 async function ghFetch(){
+  console.log('[SPORT] ghFetch start, owner='+cfg.owner+' repo='+cfg.repo);
   const ctrl=new AbortController();
-  const timer=setTimeout(()=>ctrl.abort(),15000);
+  const timer=setTimeout(()=>{console.log('[SPORT] ghFetch TIMEOUT');ctrl.abort()},15000);
   try{
+    console.log('[SPORT] Calling fetch...');
     const r=await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/data.json`,{headers:{Authorization:`token ${cfg.token}`},signal:ctrl.signal});
     clearTimeout(timer);
+    console.log('[SPORT] Fetch response:', r.status, r.ok);
     if(!r.ok)throw new Error(r.status===404?'data.json 不存在（将自动创建）':('HTTP '+r.status));
     const j=await r.json();sha=j.sha;
+    console.log('[SPORT] Data loaded, members:', (JSON.parse(decodeURIComponent(escape(atob(j.content))))).members?.length);
     return JSON.parse(decodeURIComponent(escape(atob(j.content))));
   }catch(e){
     clearTimeout(timer);
+    console.log('[SPORT] ghFetch error:', e.name, e.message);
     if(e.name==='AbortError')throw new Error('连接超时，请检查网络后刷新重试');
     throw e;
   }
@@ -271,12 +278,16 @@ async function ghSave(obj,msg){
 
 // Connect
 async function connect(){
-  if(!cfg.owner||!cfg.repo||!cfg.token){cfgError.value='请填写完整';return}
+  console.log('[SPORT] connect() called');
+  if(!cfg.owner||!cfg.repo||!cfg.token){cfgError.value='请填写完整';console.log('[SPORT] Missing config');return}
   connecting.value=true;cfgError.value='';
   try{
+    console.log('[SPORT] Calling ghFetch...');
     const d=await ghFetch();
+    console.log('[SPORT] ghFetch returned, members:', d.members?.length);
     data.members=d.members||[];data.records=d.records||[];
     connected.value=true;calcStats();
+    console.log('[SPORT] Connected!');
     try{localStorage.setItem('sport_cfg',JSON.stringify({owner:cfg.owner,repo:cfg.repo,token:cfg.token}))}catch(e){}
     // Auto-login with saved member
     try{
@@ -423,30 +434,38 @@ function genShareLink(){
 }
 
 // URL params and auto-connect
+console.log('[SPORT] Loading config...');
 try{
   const saved=localStorage.getItem('sport_cfg');
   if(saved){const c=JSON.parse(saved);cfg.owner=c.owner||'';cfg.repo=c.repo||'';cfg.token=c.token||''}
-}catch(e){}
+  console.log('[SPORT] Config from storage:', cfg.owner, cfg.repo, cfg.token?'***':'empty');
+}catch(e){console.log('[SPORT] Storage error:', e)}
 try{
   const params=new URLSearchParams(window.location.search);
   if(params.get('u'))cfg.owner=params.get('u');
   if(params.get('r'))cfg.repo=params.get('r');
   if(params.get('t'))cfg.token=params.get('t');
   if(params.get('u')||params.get('r')||params.get('t')){
+    console.log('[SPORT] Config from URL params');
     try{localStorage.setItem('sport_cfg',JSON.stringify({owner:cfg.owner,repo:cfg.repo,token:cfg.token}))}catch(e){}
     history.replaceState(null,'',window.location.pathname);
   }
-}catch(e){}
+}catch(e){console.log('[SPORT] URL params error:', e)}
+console.log('[SPORT] Final config:', cfg.owner, cfg.repo, cfg.token?'has token':'no token');
 if(cfg.owner&&cfg.repo&&cfg.token){
+  console.log('[SPORT] Auto-connecting...');
   autoConnecting.value=true;loading.value=true;
   connect();
   // Fallback: if still loading after 20s, show error
   setTimeout(()=>{
     if(loading.value&&!connected.value){
+      console.log('[SPORT] Auto-connect timeout!');
       loading.value=false;autoConnecting.value=false;
-      cfgError.value='连接超时，请检查网络后点击"重新连接"，或点击"手动设置"';
+      cfgError.value='连接超时，请检查网络后点击"重新连接"';
     }
   },20000);
+}else{
+  console.log('[SPORT] No config, showing setup screen');
 }
 
 function go(v){view.value=v;if(v==='dashboard')calcStats();else if(v==='ranking')calcRank();else if(v==='hero')calcHeroes();else if(v==='manage')filterRecs()}
